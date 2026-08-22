@@ -152,16 +152,27 @@ revoke all on public.ai_runs from anon, authenticated;
 revoke all on public.audit_logs from anon, authenticated;
 
 grant usage on schema public to authenticated;
+grant usage on schema public to service_role;
 grant select, insert, update, delete on public.suppliers to authenticated;
 grant select, insert, update, delete on public.supplier_products to authenticated;
 grant select, insert, update, delete on public.apex_recommendations to authenticated;
 grant select on public.ai_runs to authenticated;
 grant select on public.audit_logs to authenticated;
+grant select, insert, update, delete on public.suppliers to service_role;
+grant select, insert, update, delete on public.supplier_products to service_role;
+grant select, insert, update, delete on public.apex_recommendations to service_role;
+grant select, insert, update, delete on public.ai_runs to service_role;
+grant select, insert, update, delete on public.audit_logs to service_role;
 grant usage, select on sequence public.suppliers_id_seq to authenticated;
 grant usage, select on sequence public.supplier_products_id_seq to authenticated;
 grant usage, select on sequence public.apex_recommendations_id_seq to authenticated;
 grant usage, select on sequence public.ai_runs_id_seq to authenticated;
 grant usage, select on sequence public.audit_logs_id_seq to authenticated;
+grant usage, select on sequence public.suppliers_id_seq to service_role;
+grant usage, select on sequence public.supplier_products_id_seq to service_role;
+grant usage, select on sequence public.apex_recommendations_id_seq to service_role;
+grant usage, select on sequence public.ai_runs_id_seq to service_role;
+grant usage, select on sequence public.audit_logs_id_seq to service_role;
 
 create policy suppliers_admin_all on public.suppliers
 for all to authenticated
