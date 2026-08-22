@@ -1,0 +1,264 @@
+{
+  "name": "VOLTX - Supplier Discovery and Scoring",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "406ec58c-6371-4c60-a1b1-43d619ffb013",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-820, -120]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "16cefc9b-52ae-42a5-b75e-9399691a40b7",
+      "name": "Daily at 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-820, 120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const categories = [\n  'power bank 10000mAh e 20000mAh',\n  'carregador GaN 65W',\n  'carregador USB-C PD 20W',\n  'cabo USB-C trançado',\n  'fone bluetooth TWS',\n  'suporte veicular para celular',\n  'hub USB-C',\n  'adaptador USB-C'\n];\n\nconst approvedDomains = [\n  'hayamax.com.br',\n  'oderco.com.br',\n  'martinsatacado.com.br',\n  'snd.com.br'\n];\n\nconst day = Math.floor(Date.now() / 86400000);\nreturn categories.map((category, index) => {\n  const domain = approvedDomains[(day + index) % approvedDomains.length];\n  return {\n    json: {\n      category,\n      supplier_domain: domain,\n      query: `site:${domain} ${category} atacado revenda fornecedor`,\n      requested_at: new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "f1fb2c97-f93c-4cd0-b5e5-639988cf4e20",
+      "name": "Build Approved Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-560, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v2/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.FIRECRAWL_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ query: $json.query, limit: Math.min(Number($env.DISCOVERY_RESULTS_PER_QUERY || 3), 5), scrapeOptions: { formats: [{ type: 'markdown' }], onlyMainContent: true } }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "c5c524ef-e068-41ea-8610-69a233850084",
+      "name": "Firecrawl Supplier Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-300, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = [];\nconst seen = new Set();\n\nfor (const item of $input.all()) {\n  const body = item.json ?? {};\n  const data = body.data ?? body;\n  const rows = Array.isArray(data?.web)\n    ? data.web\n    : Array.isArray(data)\n      ? data\n      : Array.isArray(body.web)\n        ? body.web\n        : [];\n\n  for (const row of rows.slice(0, 5)) {\n    const sourceUrl = String(row.url ?? '').trim();\n    if (!sourceUrl.startsWith('https://') || seen.has(sourceUrl)) continue;\n    seen.add(sourceUrl);\n\n    output.push({\n      json: {\n        source_url: sourceUrl,\n        source_title: String(row.title ?? '').slice(0, 300),\n        source_description: String(row.description ?? '').slice(0, 2000),\n        source_markdown: String(row.markdown ?? row.content ?? '').slice(0, 12000),\n        discovered_at: new Date().toISOString()\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "c1315dc7-99bb-4bf7-81f8-0b089e576775",
+      "name": "Expand and Deduplicate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-40, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AI_BASE_URL.replace(/\\/$/, '') + '/chat/completions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.AI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: $env.AI_MODEL, temperature: 0.1, messages: [{ role: 'system', content: 'Você é o analista de fornecedores da VOLTX. Analise somente as evidências fornecidas. Nunca invente preço, CNPJ, estoque, garantia ou reputação. Se um dado não estiver explícito, use null ou unknown. Retorne apenas JSON válido com: source_url, supplier_name, supplier_domain, supplier_verified, cnpj, product_name, category, cost_brl, suggested_price_brl, stock_status, minimum_order_qty, shipping_notes, risk_level, score, reasons, evidence. risk_level deve ser low, medium, high ou blocked. score deve estar entre 0 e 100. supplier_verified só pode ser true quando a página comprovar claramente que se trata do site oficial da empresa/distribuidora.' }, { role: 'user', content: JSON.stringify($json) }] }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "0a7a269d-4113-4701-88e2-5a0301147c4e",
+      "name": "AI Supplier Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const source = $('Expand and Deduplicate Results').item.json;\nconst response = $json;\nconst raw = response?.choices?.[0]?.message?.content ?? response?.output_text ?? response?.content ?? '';\nconst cleaned = String(raw)\n  .replace(/^```(?:json)?\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet ai = {};\nlet parseError = null;\ntry {\n  ai = JSON.parse(cleaned);\n} catch (error) {\n  parseError = error.message;\n}\n\nconst asNumber = (value) => {\n  if (value === null || value === undefined || value === '') return null;\n  const number = Number(String(value).replace(',', '.'));\n  return Number.isFinite(number) ? number : null;\n};\n\nconst cost = asNumber(ai.cost_brl);\nconst suggestedPrice = asNumber(ai.suggested_price_brl);\nconst grossMargin = cost !== null && suggestedPrice !== null && suggestedPrice > 0\n  ? Number((((suggestedPrice - cost) / suggestedPrice) * 100).toFixed(2))\n  : null;\nconst riskValues = ['low', 'medium', 'high', 'blocked'];\nconst riskLevel = riskValues.includes(String(ai.risk_level).toLowerCase())\n  ? String(ai.risk_level).toLowerCase()\n  : 'medium';\nconst score = Math.max(0, Math.min(100, asNumber(ai.score) ?? 0));\nconst supplierVerified = ai.supplier_verified === true;\nconst hasMinimumData = Boolean(ai.product_name && source.source_url && cost !== null);\n\nlet decision = 'review';\nif (riskLevel === 'blocked') decision = 'block';\nelse if (riskLevel === 'high') decision = 'reject';\nelse if (hasMinimumData && supplierVerified && grossMargin !== null && grossMargin >= 35 && score >= 70) decision = 'recommend';\n\nconst reasons = Array.isArray(ai.reasons) ? ai.reasons : [];\nif (parseError) reasons.push(`AI JSON parse error: ${parseError}`);\nif (!hasMinimumData) reasons.push('Dados mínimos insuficientes; revisão humana obrigatória.');\n\nreturn {\n  json: {\n    source_url: source.source_url,\n    source_title: source.source_title || null,\n    supplier_name: ai.supplier_name || null,\n    supplier_domain: ai.supplier_domain ? String(ai.supplier_domain).toLowerCase() : null,\n    supplier_verified: supplierVerified,\n    cnpj: ai.cnpj || null,\n    product_name: ai.product_name || source.source_title || null,\n    category: ai.category || null,\n    cost_brl: cost,\n    suggested_price_brl: suggestedPrice,\n    gross_margin_pct: grossMargin,\n    stock_status: ['in_stock', 'out_of_stock', 'preorder', 'unknown'].includes(ai.stock_status) ? ai.stock_status : 'unknown',\n    minimum_order_qty: asNumber(ai.minimum_order_qty),\n    shipping_notes: ai.shipping_notes || null,\n    risk_level: riskLevel,\n    decision,\n    score,\n    reasons,\n    evidence: Array.isArray(ai.evidence) ? ai.evidence : [],\n    human_status: 'pending',\n    last_seen_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "45990e4b-c810-4ea6-839d-948df8057c69",
+      "name": "Validate Score and Human Gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL.replace(/\\/$/, '') + '/rest/v1/apex_recommendations?on_conflict=source_url' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "21ab52d2-bf1e-4e75-befd-12a8f49ea480",
+      "name": "Supabase Recommendation Upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "113be4d6-fef1-4d5d-86f7-49994b56e799",
+              "leftValue": "={{ ['recommend', 'review'].includes($('Validate Score and Human Gate').item.json.decision) && Boolean($env.TELEGRAM_BOT_TOKEN) && Boolean($env.TELEGRAM_CHAT_ID) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8a89a874-522e-48dc-bb46-21bb41805180",
+      "name": "Should Notify Telegram",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1000, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { chat_id: $env.TELEGRAM_CHAT_ID, disable_web_page_preview: true, text: (() => { const item = $('Validate Score and Human Gate').item.json; return `VOLTX Supplier Finder\\nDecisão: ${item.decision.toUpperCase()}\\nProduto: ${item.product_name || 'Não identificado'}\\nFornecedor: ${item.supplier_name || 'Não identificado'}\\nMargem bruta: ${item.gross_margin_pct ?? 'N/D'}%\\nRisco: ${item.risk_level}\\nScore: ${item.score}\\nRevisão humana pendente\\n${item.source_url}`; })() } }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "b134370e-b486-4314-9dfb-a10bdb2cf081",
+      "name": "Telegram Review Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1260, -80],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{"node": "Build Approved Queries", "type": "main", "index": 0}]]
+    },
+    "Daily at 07:00": {
+      "main": [[{"node": "Build Approved Queries", "type": "main", "index": 0}]]
+    },
+    "Build Approved Queries": {
+      "main": [[{"node": "Firecrawl Supplier Search", "type": "main", "index": 0}]]
+    },
+    "Firecrawl Supplier Search": {
+      "main": [[{"node": "Expand and Deduplicate Results", "type": "main", "index": 0}]]
+    },
+    "Expand and Deduplicate Results": {
+      "main": [[{"node": "AI Supplier Analysis", "type": "main", "index": 0}]]
+    },
+    "AI Supplier Analysis": {
+      "main": [[{"node": "Validate Score and Human Gate", "type": "main", "index": 0}]]
+    },
+    "Validate Score and Human Gate": {
+      "main": [[{"node": "Supabase Recommendation Upsert", "type": "main", "index": 0}]]
+    },
+    "Supabase Recommendation Upsert": {
+      "main": [[{"node": "Should Notify Telegram", "type": "main", "index": 0}]]
+    },
+    "Should Notify Telegram": {
+      "main": [[{"node": "Telegram Review Alert", "type": "main", "index": 0}], []]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "versionId": "cd47f417-e353-4db8-8582-bb2b5dc0b191",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
