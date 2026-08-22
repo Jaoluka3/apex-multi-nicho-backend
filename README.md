@@ -54,11 +54,11 @@ Variáveis obrigatórias:
 - `AI_API_KEY`
 - `AI_MODEL`
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SECRET_KEY`
 - `N8N_ENCRYPTION_KEY`
 - `N8N_DB_PASSWORD`
 
-A chave `SUPABASE_SERVICE_ROLE_KEY` é exclusiva do servidor e nunca deve entrar no Lovable ou em qualquer JavaScript enviado ao navegador.
+A chave `SUPABASE_SECRET_KEY` (`sb_secret_...`) é exclusiva do servidor e nunca deve entrar no Lovable ou em qualquer JavaScript enviado ao navegador. O workflow envia essa chave somente no cabeçalho `apikey`, conforme o padrão atual do Supabase.
 
 ## 3. Preparar o Supabase
 
