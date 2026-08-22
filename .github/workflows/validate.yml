@@ -1,0 +1,27 @@
+name: Validate automation files
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate workflow JSON
+        run: |
+          for file in workflows/*.json; do
+            jq empty "$file"
+          done
+
+      - name: Validate Docker Compose
+        run: docker compose --env-file .env.example config >/dev/null
+
