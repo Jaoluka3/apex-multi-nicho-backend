@@ -176,26 +176,26 @@ grant usage, select on sequence public.audit_logs_id_seq to service_role;
 
 create policy suppliers_admin_all on public.suppliers
 for all to authenticated
-using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-with check ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+using (((select auth.jwt()) -> 'app_metadata' ->> 'role') = 'admin')
+with check (((select auth.jwt()) -> 'app_metadata' ->> 'role') = 'admin');
 
 create policy supplier_products_admin_all on public.supplier_products
 for all to authenticated
-using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-with check ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+using (((select auth.jwt()) -> 'app_metadata' ->> 'role') = 'admin')
+with check (((select auth.jwt()) -> 'app_metadata' ->> 'role') = 'admin');
 
 create policy apex_recommendations_admin_all on public.apex_recommendations
 for all to authenticated
-using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-with check ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+using (((select auth.jwt()) -> 'app_metadata' ->> 'role') = 'admin')
+with check (((select auth.jwt()) -> 'app_metadata' ->> 'role') = 'admin');
 
 create policy ai_runs_admin_read on public.ai_runs
 for select to authenticated
-using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+using (((select auth.jwt()) -> 'app_metadata' ->> 'role') = 'admin');
 
 create policy audit_logs_admin_read on public.audit_logs
 for select to authenticated
-using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+using (((select auth.jwt()) -> 'app_metadata' ->> 'role') = 'admin');
 
 comment on table public.apex_recommendations is
   'AI suggestions only. A human must approve before a product can be published.';
